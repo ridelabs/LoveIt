@@ -392,7 +392,8 @@ var Theme = /*#__PURE__*/function () {
                 'X-Algolia-Application-Id': 'FODFSDREDFASDF42343',
               };
               // const url = `http://localhost:8004/api/search-query/`;
-              const url = `http://localhost/api/search-query/`;
+              //const url = `http://localhost/api/search-query/`;
+              const url = `/api/search-query/`;
 
               fetch(url, {
                 method: 'POST',
