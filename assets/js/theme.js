@@ -265,7 +265,7 @@ var Theme = /*#__PURE__*/function () {
               $searchClear.style.display = 'inline';
               callback(results);
             };
-
+            console.log("searchConfig=", searchConfig);
             if (searchConfig.type === 'lunr') {
               var search = function search() {
                 if (lunr.queryHandler) query = lunr.queryHandler(query);
@@ -379,6 +379,55 @@ var Theme = /*#__PURE__*/function () {
                 console.error(err);
                 finish([]);
               });
+            // } else if (searchConfig.type === 'ridelabs') {
+            } else {  // why can't we access the ridelabs value here? It's just undefined if I don't set it to either algolia or lunr!
+              const body = JSON.stringify({
+                query,
+                highlightPreTag: "<".concat(highlightTag, ">"),
+                highlightPostTag: "</".concat(highlightTag, ">")
+              });
+
+              const headers = {
+                'X-Algolia-API-Key': '39494493493439439434',
+                'X-Algolia-Application-Id': 'FODFSDREDFASDF42343',
+              };
+              // const url = `http://localhost:8004/api/search-query/`;
+              const url = `http://localhost/api/search-query/`;
+
+              fetch(url, {
+                method: 'POST',
+                headers,
+                body,
+                mode: 'cors',
+              })
+                  .then((response) => {
+                    if (!response.ok) {
+                      throw new Error(`Websearch API request failed with status ${response.status}`);
+                    }
+
+                    response.json().then((jsonResponse) => {
+                      var results = [];
+                      jsonResponse.hits.forEach(function (record) {
+                        var hit = {
+                          "uri": record.url,
+                          "title": record.title,
+                          "date": record.date,
+                          "context": record.description,
+                        }
+                        results.push(hit);
+                      });
+                      finish(results);
+                    }).catch((error) => {
+                      console.error(error);
+                      finish([]);
+                    });
+                  }).catch((error) => {
+                    console.error(error);
+                    finish([]);
+                    // return data.hits;
+                  });
+            // } else {
+              console.error("Unsupported search type: ", searchConfig.type);
             }
           },
           templates: {
@@ -396,14 +445,18 @@ var Theme = /*#__PURE__*/function () {
               _objectDestructuringEmpty(_ref7);
 
               var _ref8 = searchConfig.type === 'algolia' ? {
-                searchType: 'algolia',
-                icon: '<i class="fab fa-algolia fa-fw" aria-hidden="true"></i>',
-                href: 'https://www.algolia.com/'
-              } : {
-                searchType: 'Lunr.js',
-                icon: '',
-                href: 'https://lunrjs.com/'
-              },
+                    searchType: 'algolia',
+                    icon: '<i class="fab fa-algolia fa-fw" aria-hidden="true"></i>',
+                    href: 'https://www.algolia.com/'
+                  } : searchConfig.type === 'lunr' ? {
+                    searchType: 'Lunr.js',
+                    icon: '',
+                    href: 'https://lunrjs.com/'
+                  } : {
+                    searchType: 'ridelabs',
+                    icon: '<i class="fab fa-algolia fa-fw" aria-hidden="true"></i>',
+                    href: 'http://ridelabs.net/'
+                  },
                   searchType = _ref8.searchType,
                   icon = _ref8.icon,
                   href = _ref8.href;
