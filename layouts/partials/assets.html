@@ -27,6 +27,10 @@
         {{- $source := $cdn.algoliasearchJS | default "lib/algoliasearch/algoliasearch-lite.umd.min.js" -}}
         {{- dict "Source" $source "Fingerprint" $fingerprint | dict "Scratch" .Scratch "Data" | partial "scratch/script.html" -}}
         {{- $config = dict "type" "algolia" "algoliaIndex" $search.algolia.index "algoliaAppID" $search.algolia.appID "algoliaSearchKey" $search.algolia.searchKey | dict "search" | merge $config -}}
+    {{- else if eq $search.type "ridelabs" -}}
+        {{- $source := $cdn.algoliasearchJS | default "lib/algoliasearch/algoliasearch-lite.umd.min.js" -}}
+        {{- dict "Source" $source "Fingerprint" $fingerprint | dict "Scratch" .Scratch "Data" | partial "scratch/script.html" -}}
+        {{- $config = dict "type" "ridelabs" "searchUrl" $search.ridelabs.searchUrl "appID" $search.ridelabs.appID "apiKey" $search.ridelabs.apiKey | dict "search" | merge $config -}}
     {{- end -}}
 {{- end -}}
 
