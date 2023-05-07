@@ -98,21 +98,220 @@ class Theme {
         });
     }
 
+    initAutosearch(searchConfig, isMobile, inputId, dropdownId, startedCallback, finishedCallback) {
+        const highlightTag = searchConfig.highlightTag ? searchConfig.highlightTag : 'em';
+        const snippetLength = searchConfig.snippetLength ? searchConfig.snippetLength : 50;
+        const maxResultLength = searchConfig.maxResultLength ? searchConfig.maxResultLength : 10;
+
+        // const initAutosearch = (inputId, dropdownId, searchLoadingE, searchClearE) => {
+        const autosearch = autocomplete(inputId, {
+            hint: false,
+            autoselect: true,
+            dropdownMenuContainer: dropdownId,
+            clearOnSelected: true,
+            cssClasses: {noPrefix: true},
+            debug: true,
+        }, {
+            name: 'search',
+            source: (query, callback) => {
+                startedCallback();
+
+                const finish = (results) => {
+                    finishedCallback();
+                    callback(results);
+                };
+
+                if (searchConfig.type === 'lunr') {
+                    const search = () => {
+                        if (lunr.queryHandler) query = lunr.queryHandler(query);
+                        const results = {};
+                        this._index.search(query).forEach(({ref, matchData: {metadata}}) => {
+                            const matchData = this._indexData[ref];
+                            let {uri, title, content: context} = matchData;
+                            if (results[uri]) return;
+                            let position = 0;
+                            Object.values(metadata).forEach(({content}) => {
+                                if (content) {
+                                    const matchPosition = content.position[0][0];
+                                    if (matchPosition < position || position === 0) position = matchPosition;
+                                }
+                            });
+                            position -= snippetLength / 5;
+                            if (position > 0) {
+                                position += context.substr(position, 20).lastIndexOf(' ') + 1;
+                                context = '...' + context.substr(position, snippetLength);
+                            } else {
+                                context = context.substr(0, snippetLength);
+                            }
+                            Object.keys(metadata).forEach(key => {
+                                title = title.replace(new RegExp(`(${key})`, 'gi'), `<${highlightTag}>$1</${highlightTag}>`);
+                                context = context.replace(new RegExp(`(${key})`, 'gi'), `<${highlightTag}>$1</${highlightTag}>`);
+                            });
+                            results[uri] = {
+                                'uri': uri,
+                                'title': title,
+                                'date': matchData.date,
+                                'context': context,
+                            };
+                        });
+                        return Object.values(results).slice(0, maxResultLength);
+                    }
+                    if (!this._index) {
+                        fetch(searchConfig.lunrIndexURL)
+                            .then(response => response.json())
+                            .then(data => {
+                                const indexData = {};
+                                this._index = lunr(function () {
+                                    if (searchConfig.lunrLanguageCode) this.use(lunr[searchConfig.lunrLanguageCode]);
+                                    this.ref('objectID');
+                                    this.field('title', {boost: 50});
+                                    this.field('tags', {boost: 20});
+                                    this.field('categories', {boost: 20});
+                                    this.field('content', {boost: 10});
+                                    this.metadataWhitelist = ['position'];
+                                    data.forEach((record) => {
+                                        indexData[record.objectID] = record;
+                                        this.add(record);
+                                    });
+                                });
+                                this._indexData = indexData;
+                                finish(search());
+                            }).catch(err => {
+                            console.error(err);
+                            finish([]);
+                        });
+                    } else finish(search());
+                } else if (searchConfig.type === 'algolia') {
+                    this._algoliaIndex = this._algoliaIndex || algoliasearch(searchConfig.algoliaAppID, searchConfig.algoliaSearchKey).initIndex(searchConfig.algoliaIndex);
+                    this._algoliaIndex
+                        .search(query, {
+                            offset: 0,
+                            length: maxResultLength * 8,
+                            attributesToHighlight: ['title'],
+                            attributesToSnippet: [`content:${snippetLength}`],
+                            highlightPreTag: `<${highlightTag}>`,
+                            highlightPostTag: `</${highlightTag}>`,
+                        })
+                        .then(({hits}) => {
+                            const results = {};
+                            hits.forEach(({uri, date, _highlightResult: {title}, _snippetResult: {content}}) => {
+                                if (results[uri] && results[uri].context.length > content.value) return;
+                                results[uri] = {
+                                    uri: uri,
+                                    title: title.value,
+                                    date: date,
+                                    context: content.value,
+                                };
+                            });
+                            finish(Object.values(results).slice(0, maxResultLength));
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            finish([]);
+                        });
+                } else if (searchConfig.type === 'ridelabs') {
+                    const body = JSON.stringify({
+                        query,
+                        highlightPreTag: "<".concat(highlightTag, ">"),
+                        highlightPostTag: "</".concat(highlightTag, ">")
+                    });
+
+                    const headers = {
+                        'X-Ridelabs-API-Key': searchConfig.apiKey,
+                        'X-Ridelabs-Application-Id': searchConfig.appID,
+                    };
+
+                    fetch(searchConfig.searchUrl, {
+                        method: 'POST',
+                        headers,
+                        body,
+                        mode: 'cors',
+                    })
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`Websearch API request failed with status ${response.status}`);
+                            }
+
+                            response.json().then((jsonResponse) => {
+                                var results = [];
+                                jsonResponse.hits.forEach(function (record) {
+                                    var hit = {
+                                        "uri": record.url,
+                                        "title": record.title,
+                                        "date": record.date,
+                                        "context": record.description,
+                                    }
+                                    results.push(hit);
+                                });
+                                finish(results);
+                            }).catch((error) => {
+                                console.error(error);
+                                finish([]);
+                            });
+                        }).catch((error) => {
+                        console.error(error);
+                        finish([]);
+                        // return data.hits;
+                    });
+                } else {
+                    console.log("Sorry, search of this type is not supported: ", searchConfig.type)
+                }
+            },
+            templates: {
+                suggestion: ({
+                                 title,
+                                 date,
+                                 context
+                             }) => `<div>
+                                        <span class="suggestion-title">${title}</span>
+                                        <span class="suggestion-date">${date}</span>
+                                    </div>
+                                    <div class="suggestion-context">${context}</div>
+                                    `,
+                empty: ({query}) => `<div class="search-empty">${searchConfig.noResultsFound}: <span class="search-query">"${query}"</span></div>`,
+                footer: ({}) => {
+                    const {searchType, icon, href} = searchConfig.type === 'algolia' ? {
+                        searchType: 'algolia',
+                        icon: '<i class="fab fa-algolia fa-fw" aria-hidden="true"></i>',
+                        href: 'https://www.algolia.com/',
+                    } : searchConfig.type === 'lunr' ? {
+                        searchType: 'Lunr.js',
+                        icon: '',
+                        href: 'https://lunrjs.com/',
+                    } : {
+                        searchType: 'ridelabs',
+                        icon: '<i class="fab fa-algolia fa-fw" aria-hidden="true"></i>',
+                        href: 'http://ridelabs.net/'
+                    };
+                    return `<div class="search-footer">Search by <a href="${href}" rel="noopener noreffer" target="_blank">${icon} ${searchType}</a></div>`;
+                },
+            },
+        });
+        autosearch.on('autocomplete:selected', (_event, suggestion, _dataset, _context) => {
+            window.location.assign(suggestion.uri);
+        });
+        return autosearch;
+    };
+
     initSearch() {
         const searchConfig = this.config.search;
         const isMobile = this.util.isMobile();
         if (!searchConfig || isMobile && this._searchMobileOnce || !isMobile && this._searchDesktopOnce) return;
 
-        const maxResultLength = searchConfig.maxResultLength ? searchConfig.maxResultLength : 10;
-        const snippetLength = searchConfig.snippetLength ? searchConfig.snippetLength : 50;
-        const highlightTag = searchConfig.highlightTag ? searchConfig.highlightTag : 'em';
-
         const suffix = isMobile ? 'mobile' : 'desktop';
         const $header = document.getElementById(`header-${suffix}`);
+
         const $searchInput = document.getElementById(`search-input-${suffix}`);
         const $searchToggle = document.getElementById(`search-toggle-${suffix}`);
         const $searchLoading = document.getElementById(`search-loading-${suffix}`);
         const $searchClear = document.getElementById(`search-clear-${suffix}`);
+        const searchInputTop = `#search-input-${suffix}`;
+        const searchDropdownTop = `#search-dropdown-${suffix}`;
+
+        const $searchBoxHero = document.getElementById(`search-box-hero`);
+
+
+
         if (isMobile) {
             this._searchMobileOnce = true;
             $searchInput.addEventListener('focus', () => {
@@ -131,168 +330,56 @@ class Theme {
             $searchClear.addEventListener('click', () => {
                 $searchClear.style.display = 'none';
                 this._searchMobile && this._searchMobile.autocomplete.setVal('');
+                // add focus back to the input field
+                console.log("We are focusing back on searchInput field now")
+                $searchInput.focus();
+
             }, false);
-            this._searchMobileOnClickMask = this._searchMobileOnClickMask || (() => {
+            this.clickMaskEventSet.add(() => {
                 $header.classList.remove('open');
                 $searchLoading.style.display = 'none';
                 $searchClear.style.display = 'none';
                 this._searchMobile && this._searchMobile.autocomplete.setVal('');
+                console.log("Click mask event mobile!")
             });
-            this.clickMaskEventSet.add(this._searchMobileOnClickMask);
         } else {
             this._searchDesktopOnce = true;
             $searchToggle.addEventListener('click', () => {
+                // console.log("about to click mask events for clear!")
+                // this.onClickMask();
+                // console.log("Done clickmaskeventing")
+                if ($searchBoxHero) {
+                    console.log("Dropping search input hero z-index")
+                    $searchBoxHero.style.zIndex = 0;
+                }
+
                 document.body.classList.add('blur');
                 $header.classList.add('open');
                 $searchInput.focus();
             }, false);
             $searchClear.addEventListener('click', () => {
                 $searchClear.style.display = 'none';
+                // add focus back to the input field
+                console.log("We are focusing back on searchInput field now")
+                $searchInput.focus();
                 this._searchDesktop && this._searchDesktop.autocomplete.setVal('');
             }, false);
-            this._searchDesktopOnClickMask = this._searchDesktopOnClickMask || (() => {
+            this.clickMaskEventSet.add(() => {
                 $header.classList.remove('open');
                 $searchLoading.style.display = 'none';
                 $searchClear.style.display = 'none';
                 this._searchDesktop && this._searchDesktop.autocomplete.setVal('');
+                console.log("Click mask event desk!")
             });
-            this.clickMaskEventSet.add(this._searchDesktopOnClickMask);
         }
+
+
         $searchInput.addEventListener('input', () => {
             if ($searchInput.value === '') $searchClear.style.display = 'none';
             else $searchClear.style.display = 'inline';
         }, false);
 
-        const initAutosearch = () => {
-            const autosearch = autocomplete(`#search-input-${suffix}`, {
-                hint: false,
-                autoselect: true,
-                dropdownMenuContainer: `#search-dropdown-${suffix}`,
-                clearOnSelected: true,
-                cssClasses: { noPrefix: true },
-                debug: true,
-            }, {
-                name: 'search',
-                source: (query, callback) => {
-                    $searchLoading.style.display = 'inline';
-                    $searchClear.style.display = 'none';
-                    const finish = (results) => {
-                        $searchLoading.style.display = 'none';
-                        $searchClear.style.display = 'inline';
-                        callback(results);
-                    };
-                    if (searchConfig.type === 'lunr') {
-                        const search = () => {
-                            if (lunr.queryHandler) query = lunr.queryHandler(query);
-                            const results = {};
-                            this._index.search(query).forEach(({ ref, matchData: { metadata } }) => {
-                                const matchData = this._indexData[ref];
-                                let { uri, title, content: context } = matchData;
-                                if (results[uri]) return;
-                                let position = 0;
-                                Object.values(metadata).forEach(({ content }) => {
-                                    if (content) {
-                                        const matchPosition = content.position[0][0];
-                                        if (matchPosition < position || position === 0) position = matchPosition;
-                                    }
-                                });
-                                position -= snippetLength / 5;
-                                if (position > 0) {
-                                    position += context.substr(position, 20).lastIndexOf(' ') + 1;
-                                    context = '...' + context.substr(position, snippetLength);
-                                } else {
-                                    context = context.substr(0, snippetLength);
-                                }
-                                Object.keys(metadata).forEach(key => {
-                                    title = title.replace(new RegExp(`(${key})`, 'gi'), `<${highlightTag}>$1</${highlightTag}>`);
-                                    context = context.replace(new RegExp(`(${key})`, 'gi'), `<${highlightTag}>$1</${highlightTag}>`);
-                                });
-                                results[uri] = {
-                                    'uri': uri,
-                                    'title' : title,
-                                    'date' : matchData.date,
-                                    'context' : context,
-                                };
-                            });
-                            return Object.values(results).slice(0, maxResultLength);
-                        }
-                        if (!this._index) {
-                            fetch(searchConfig.lunrIndexURL)
-                                .then(response => response.json())
-                                .then(data => {
-                                    const indexData = {};
-                                    this._index = lunr(function () {
-                                        if (searchConfig.lunrLanguageCode) this.use(lunr[searchConfig.lunrLanguageCode]);
-                                        this.ref('objectID');
-                                        this.field('title', { boost: 50 });
-                                        this.field('tags', { boost: 20 });
-                                        this.field('categories', { boost: 20 });
-                                        this.field('content', { boost: 10 });
-                                        this.metadataWhitelist = ['position'];
-                                        data.forEach((record) => {
-                                            indexData[record.objectID] = record;
-                                            this.add(record);
-                                        });
-                                    });
-                                    this._indexData = indexData;
-                                    finish(search());
-                                }).catch(err => {
-                                    console.error(err);
-                                    finish([]);
-                                });
-                        } else finish(search());
-                    } else if (searchConfig.type === 'algolia') {
-                        this._algoliaIndex = this._algoliaIndex || algoliasearch(searchConfig.algoliaAppID, searchConfig.algoliaSearchKey).initIndex(searchConfig.algoliaIndex);
-                        this._algoliaIndex
-                            .search(query, {
-                                offset: 0,
-                                length: maxResultLength * 8,
-                                attributesToHighlight: ['title'],
-                                attributesToSnippet: [`content:${snippetLength}`],
-                                highlightPreTag: `<${highlightTag}>`,
-                                highlightPostTag: `</${highlightTag}>`,
-                            })
-                            .then(({ hits }) => {
-                                const results = {};
-                                hits.forEach(({ uri, date, _highlightResult: { title }, _snippetResult: { content } }) => {
-                                    if (results[uri] && results[uri].context.length > content.value) return;
-                                    results[uri] = {
-                                        uri: uri,
-                                        title: title.value,
-                                        date: date,
-                                        context: content.value,
-                                    };
-                                });
-                                finish(Object.values(results).slice(0, maxResultLength));
-                            })
-                            .catch(err => {
-                                console.error(err);
-                                finish([]);
-                            });
-                    }
-                },
-                templates: {
-                    suggestion: ({ title, date, context }) => `<div><span class="suggestion-title">${title}</span><span class="suggestion-date">${date}</span></div><div class="suggestion-context">${context}</div>`,
-                    empty: ({ query }) => `<div class="search-empty">${searchConfig.noResultsFound}: <span class="search-query">"${query}"</span></div>`,
-                    footer: ({}) => {
-                        const { searchType, icon, href } = searchConfig.type === 'algolia' ? {
-                            searchType: 'algolia',
-                            icon: '<i class="fab fa-algolia fa-fw" aria-hidden="true"></i>',
-                            href: 'https://www.algolia.com/',
-                        } : {
-                            searchType: 'Lunr.js',
-                            icon: '',
-                            href: 'https://lunrjs.com/',
-                        };
-                        return `<div class="search-footer">Search by <a href="${href}" rel="noopener noreffer" target="_blank">${icon} ${searchType}</a></div>`;},
-                },
-            });
-            autosearch.on('autocomplete:selected', (_event, suggestion, _dataset, _context) => {
-                window.location.assign(suggestion.uri);
-            });
-            if (isMobile) this._searchMobile = autosearch;
-            else this._searchDesktop = autosearch;
-        };
+
         if (searchConfig.lunrSegmentitURL && !document.getElementById('lunr-segmentit')) {
             const script = document.createElement('script');
             script.id = 'lunr-segmentit';
@@ -301,18 +388,129 @@ class Theme {
             script.async = true;
             if (script.readyState) {
                 script.onreadystatechange = () => {
-                    if (script.readyState == 'loaded' || script.readyState == 'complete'){
+                    if (script.readyState == 'loaded' || script.readyState == 'complete') {
                         script.onreadystatechange = null;
-                        initAutosearch();
+                        const autosearch = this.initAutosearch(searchConfig, isMobile, searchInputTop, searchDropdownTop,
+                            () => {
+                                $searchLoading.style.display = 'inline';
+                                $searchClear.style.display = 'none';
+                            },
+                            () => {
+                                $searchLoading.style.display = 'none';
+                                $searchClear.style.display = 'inline';
+                            });
+                        if (isMobile) this._searchMobile = autosearch;
+                        else this._searchDesktop = autosearch;
                     }
                 };
             } else {
                 script.onload = () => {
-                    initAutosearch();
+                    const autosearch = this.initAutosearch(searchConfig, isMobile, searchInputTop, searchDropdownTop,
+                        () => {
+                            $searchLoading.style.display = 'inline';
+                            $searchClear.style.display = 'none';
+                        },
+                        () => {
+                            $searchLoading.style.display = 'none';
+                            $searchClear.style.display = 'inline';
+                        });
+                    if (isMobile) this._searchMobile = autosearch;
+                    else this._searchDesktop = autosearch;
                 };
             }
             document.body.appendChild(script);
-        } else initAutosearch();
+        } else {
+            const autosearch = this.initAutosearch(searchConfig, isMobile, searchInputTop, searchDropdownTop,
+                () => {
+                    $searchLoading.style.display = 'inline';
+                    $searchClear.style.display = 'none';
+                },
+                () => {
+                    $searchLoading.style.display = 'none';
+                    $searchClear.style.display = 'inline';
+                });
+            if (isMobile) this._searchMobile = autosearch;
+            else this._searchDesktop = autosearch;
+        }
+
+       // --------------------------------
+        // Hero search controls...
+        // --------------------------------
+        const $searchLoadingHero = document.getElementById(`search-loading-hero`);
+        const $searchClearHero = document.getElementById(`search-clear-hero`);
+        const searchInputHero = `#search-input-hero`;
+        const searchDropdownHero = `#search-dropdown-hero`;
+        const $searchInputHero = document.getElementById(`search-input-hero`);
+
+
+        if ($searchInputHero) {
+            const autosearch = this.initAutosearch(
+                searchConfig,
+                isMobile,
+                searchInputHero,
+                searchDropdownHero,
+                () => {
+                    $searchLoadingHero.style.display = 'inline';
+                    $searchClearHero.style.display = 'none';
+                },
+                () => {
+                    $searchLoadingHero.style.display = 'none';
+                    $searchClearHero.style.display = 'inline';
+                });
+
+            console.log("We are about to set up the listener for searchInputHero: ", $searchInputHero);
+            // $searchInputHero.addEventListener('focus', () => {
+            //     document.body.classList.add('blur');
+            //     $searchBoxHero.style.zIndex = 200;
+            //     console.log("I AM FOCUSING ON THE HERO SEARCH INPUT")
+            //     // $header.classList.add('open');
+            // }, false);
+
+            $searchInputHero.addEventListener('focusin', () => {
+                // console.log("searchInputHero: focusin/start")
+                // $header.style.zIndex = 100;
+                document.body.classList.add('blur');
+                // fix header to bezindex 0
+                // console.log("searchInputHero: focusin/complete")
+            })
+
+            // THIS IS ONLY OFF DURING DEVELOPMENT!!!
+            $searchInputHero.addEventListener("focusout", () => {
+                // console.log("searchInputHero: focus/start")
+                document.body.classList.remove('blur');
+                autosearch.autocomplete.setVal('');
+                // console.log("searchInputHero: focus/complete")
+
+                // $header.style.zIndex = 150;
+            })
+
+
+            $searchClearHero.style.display = 'none';
+            $searchLoadingHero.style.display = 'none';
+
+            $searchInputHero.addEventListener('input', () => {
+                if ($searchInputHero.value === '') $searchClearHero.style.display = 'none';
+                else $searchClearHero.style.display = 'inline';
+            }, false);
+
+            $searchClearHero.addEventListener('click', () => {
+                $searchClearHero.style.display = 'none';
+                // $searchInputHero.value = "";
+                $searchClearHero.style.display = 'none';
+                // $searchClear.style.display = 'none';
+                autosearch.autocomplete.setVal('');
+            }, false);
+
+            console.log("hey, autosearch=", autosearch);
+            this.clickMaskEventSet.add(() => {
+                console.log("clickMaskEvent (hero): autosearch=", autosearch);
+                $header.classList.remove('open');
+                $searchLoadingHero.style.display = 'none';
+                $searchClearHero.style.display = 'none';
+                autosearch.autocomplete.setVal('');
+                console.log("clickMaskEvent (hero): done")
+            });
+        }
     }
 
     initDetails() {
