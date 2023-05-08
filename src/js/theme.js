@@ -41,6 +41,9 @@ class Theme {
         this.switchThemeEventSet = new Set();
         this.clickMaskEventSet = new Set();
         if (window.objectFitImages) objectFitImages();
+        this._heroSearch = undefined;
+        this._searchDesktop = undefined;
+        this._searchMobile = undefined;
     }
 
     initRaw() {
@@ -302,6 +305,7 @@ class Theme {
         if ($headerMobile) {
             $headerMobile.style.zIndex = 0;
         }
+        this.doneSearchingInHeader();
     }
 
     doneSearchingInHero() {
@@ -313,6 +317,9 @@ class Theme {
         if ($headerMobile) {
             $headerMobile.style.zIndex = 150;
         }
+        if (this._heroSearch) {
+            this._heroSearch.autocomplete.setVal('');         
+        }
     }
 
     searchingInHeader() {
@@ -320,6 +327,7 @@ class Theme {
         if ($hero) {
             $hero.style.zIndex = 0;
         }
+        this.doneSearchingInHero();
     }
 
     doneSearchingInHeader() {
@@ -327,6 +335,8 @@ class Theme {
         if ($hero) {
             $hero.style.zIndex = 102;
         }
+        this._searchMobile && this._searchMobile.autocomplete.setVal('');
+        this._searchDesktop && this._searchDesktop.autocomplete.setVal('');
     }
 
     initSearch() {
@@ -473,7 +483,7 @@ class Theme {
 
 
         if ($searchInputHero) {
-            const autosearch = this.initAutosearch(
+            this._heroSearch = this.initAutosearch(
                 searchConfig,
                 isMobile,
                 searchInputHero,
@@ -496,7 +506,6 @@ class Theme {
             $searchInputHero.addEventListener("focusout", () => {
                 document.body.classList.remove('blur');
                 this.doneSearchingInHero();
-                autosearch.autocomplete.setVal('');
             })
 
 
@@ -510,14 +519,13 @@ class Theme {
 
             $searchClearHero.addEventListener('click', () => {
                 $searchClearHero.style.display = 'none';
-                autosearch.autocomplete.setVal('');
+                this._heroSearch.autocomplete.setVal('');
             }, false);
 
             this.clickMaskEventSet.add(() => {
                 $header.classList.remove('open');
                 $searchLoadingHero.style.display = 'none';
                 $searchClearHero.style.display = 'none';
-                autosearch.autocomplete.setVal('');
                 this.doneSearchingInHero();
             });
         }

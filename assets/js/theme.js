@@ -38,6 +38,9 @@ class Theme {
     this.switchThemeEventSet = new Set();
     this.clickMaskEventSet = new Set();
     if (window.objectFitImages) objectFitImages();
+    this._heroSearch = undefined;
+    this._searchDesktop = undefined;
+    this._searchMobile = undefined;
   }
   initRaw() {
     this.util.forEach(document.querySelectorAll('[data-raw]'), $raw => {
@@ -323,6 +326,7 @@ class Theme {
     if ($headerMobile) {
       $headerMobile.style.zIndex = 0;
     }
+    this.doneSearchingInHeader();
   }
   doneSearchingInHero() {
     const $headerDesk = document.getElementById('header-desktop');
@@ -333,18 +337,24 @@ class Theme {
     if ($headerMobile) {
       $headerMobile.style.zIndex = 150;
     }
+    if (this._heroSearch) {
+      this._heroSearch.autocomplete.setVal('');
+    }
   }
   searchingInHeader() {
     const $hero = document.getElementById('hero-search-box');
     if ($hero) {
       $hero.style.zIndex = 0;
     }
+    this.doneSearchingInHero();
   }
   doneSearchingInHeader() {
     const $hero = document.getElementById('hero-search-box');
     if ($hero) {
       $hero.style.zIndex = 102;
     }
+    this._searchMobile && this._searchMobile.autocomplete.setVal('');
+    this._searchDesktop && this._searchDesktop.autocomplete.setVal('');
   }
   initSearch() {
     const searchConfig = this.config.search;
@@ -468,7 +478,7 @@ class Theme {
     const searchDropdownHero = "#search-dropdown-hero";
     const $searchInputHero = document.getElementById("search-input-hero");
     if ($searchInputHero) {
-      const autosearch = this.initAutosearch(searchConfig, isMobile, searchInputHero, searchDropdownHero, () => {
+      this._heroSearch = this.initAutosearch(searchConfig, isMobile, searchInputHero, searchDropdownHero, () => {
         $searchLoadingHero.style.display = 'inline';
         $searchClearHero.style.display = 'none';
       }, () => {
@@ -484,7 +494,6 @@ class Theme {
       $searchInputHero.addEventListener("focusout", () => {
         document.body.classList.remove('blur');
         this.doneSearchingInHero();
-        autosearch.autocomplete.setVal('');
       });
       $searchClearHero.style.display = 'none';
       $searchLoadingHero.style.display = 'none';
@@ -493,13 +502,12 @@ class Theme {
       }, false);
       $searchClearHero.addEventListener('click', () => {
         $searchClearHero.style.display = 'none';
-        autosearch.autocomplete.setVal('');
+        this._heroSearch.autocomplete.setVal('');
       }, false);
       this.clickMaskEventSet.add(() => {
         $header.classList.remove('open');
         $searchLoadingHero.style.display = 'none';
         $searchClearHero.style.display = 'none';
-        autosearch.autocomplete.setVal('');
         this.doneSearchingInHero();
       });
     }
