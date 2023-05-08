@@ -314,6 +314,38 @@ class Theme {
     });
     return autosearch;
   }
+  searchingInHero() {
+    const $headerDesk = document.getElementById('header-desktop');
+    if ($headerDesk) {
+      $headerDesk.style.zIndex = 0;
+    }
+    const $headerMobile = document.getElementById('header-mobile');
+    if ($headerMobile) {
+      $headerMobile.style.zIndex = 0;
+    }
+  }
+  doneSearchingInHero() {
+    const $headerDesk = document.getElementById('header-desktop');
+    if ($headerDesk) {
+      $headerDesk.style.zIndex = 150;
+    }
+    const $headerMobile = document.getElementById('header-mobile');
+    if ($headerMobile) {
+      $headerMobile.style.zIndex = 150;
+    }
+  }
+  searchingInHeader() {
+    const $hero = document.getElementById('hero-search-box');
+    if ($hero) {
+      $hero.style.zIndex = 0;
+    }
+  }
+  doneSearchingInHeader() {
+    const $hero = document.getElementById('hero-search-box');
+    if ($hero) {
+      $hero.style.zIndex = 102;
+    }
+  }
   initSearch() {
     const searchConfig = this.config.search;
     const isMobile = this.util.isMobile();
@@ -331,6 +363,7 @@ class Theme {
       this._searchMobileOnce = true;
       $searchInput.addEventListener('focus', () => {
         document.body.classList.add('blur');
+        this.searchingInHeader();
         $header.classList.add('open');
       }, false);
       document.getElementById('search-cancel-mobile').addEventListener('click', () => {
@@ -346,26 +379,20 @@ class Theme {
         $searchClear.style.display = 'none';
         this._searchMobile && this._searchMobile.autocomplete.setVal('');
         // add focus back to the input field
-        console.log("We are focusing back on searchInput field now");
         $searchInput.focus();
       }, false);
       this.clickMaskEventSet.add(() => {
         $header.classList.remove('open');
         $searchLoading.style.display = 'none';
         $searchClear.style.display = 'none';
+        this.doneSearchingInHeader();
         this._searchMobile && this._searchMobile.autocomplete.setVal('');
         console.log("Click mask event mobile!");
       });
     } else {
       this._searchDesktopOnce = true;
       $searchToggle.addEventListener('click', () => {
-        // console.log("about to click mask events for clear!")
-        // this.onClickMask();
-        // console.log("Done clickmaskeventing")
-        if ($searchBoxHero) {
-          console.log("Dropping search input hero z-index");
-          $searchBoxHero.style.zIndex = 0;
-        }
+        this.searchingInHeader();
         document.body.classList.add('blur');
         $header.classList.add('open');
         $searchInput.focus();
@@ -373,7 +400,6 @@ class Theme {
       $searchClear.addEventListener('click', () => {
         $searchClear.style.display = 'none';
         // add focus back to the input field
-        console.log("We are focusing back on searchInput field now");
         $searchInput.focus();
         this._searchDesktop && this._searchDesktop.autocomplete.setVal('');
       }, false);
@@ -381,6 +407,7 @@ class Theme {
         $header.classList.remove('open');
         $searchLoading.style.display = 'none';
         $searchClear.style.display = 'none';
+        this.doneSearchingInHeader();
         this._searchDesktop && this._searchDesktop.autocomplete.setVal('');
         console.log("Click mask event desk!");
       });
@@ -448,32 +475,17 @@ class Theme {
         $searchLoadingHero.style.display = 'none';
         $searchClearHero.style.display = 'inline';
       });
-      console.log("We are about to set up the listener for searchInputHero: ", $searchInputHero);
-      // $searchInputHero.addEventListener('focus', () => {
-      //     document.body.classList.add('blur');
-      //     $searchBoxHero.style.zIndex = 200;
-      //     console.log("I AM FOCUSING ON THE HERO SEARCH INPUT")
-      //     // $header.classList.add('open');
-      // }, false);
-
       $searchInputHero.addEventListener('focusin', () => {
-        console.log("searchInputHero: focusin/start");
-        // $header.style.zIndex = 100;
+        this.searchingInHero();
         document.body.classList.add('blur');
-        // fix header to bezindex 0
-        console.log("searchInputHero: focusin/complete");
       });
 
       // THIS IS ONLY OFF DURING DEVELOPMENT!!!
       $searchInputHero.addEventListener("focusout", () => {
-        console.log("searchInputHero: focus/start");
         document.body.classList.remove('blur');
+        this.doneSearchingInHero();
         autosearch.autocomplete.setVal('');
-        console.log("searchInputHero: focus/complete");
-
-        // $header.style.zIndex = 150;
       });
-
       $searchClearHero.style.display = 'none';
       $searchLoadingHero.style.display = 'none';
       $searchInputHero.addEventListener('input', () => {
@@ -481,19 +493,14 @@ class Theme {
       }, false);
       $searchClearHero.addEventListener('click', () => {
         $searchClearHero.style.display = 'none';
-        // $searchInputHero.value = "";
-        $searchClearHero.style.display = 'none';
-        // $searchClear.style.display = 'none';
         autosearch.autocomplete.setVal('');
       }, false);
-      console.log("hey, autosearch=", autosearch);
       this.clickMaskEventSet.add(() => {
-        console.log("clickMaskEvent (hero): autosearch=", autosearch);
         $header.classList.remove('open');
         $searchLoadingHero.style.display = 'none';
         $searchClearHero.style.display = 'none';
         autosearch.autocomplete.setVal('');
-        console.log("clickMaskEvent (hero): done");
+        this.doneSearchingInHero();
       });
     }
   }
